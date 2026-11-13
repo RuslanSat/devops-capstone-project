@@ -38,11 +38,16 @@ jobs:
       - name: Lint with pylint
         run: pylint service --fail-under=9
       - name: Test with nose and enforce 95 percent coverage
-        run: nosetests -v --with-spec --spec-color --with-coverage --cover-package=service --cover-erase --cover-min-percentage=95
+        run: |
+          nosetests -v --with-spec --spec-color --with-coverage --cover-package=service --cover-erase --cover-min-percentage=95
+          coverage report -m --fail-under=95
+          coverage xml
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage
-          path: .coverage
+          path: |
+            .coverage
+            coverage.xml
           include-hidden-files: true

@@ -14,27 +14,27 @@ spec:
     spec:
       containers:
         - name: accounts
-          image: us.icr.io/sn-labs-u241983/accounts:1.0
+          image: IMAGE_NAME_HERE
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
           env:
             - name: DATABASE_HOST
-              value: accounts-postgres
+              value: postgresql
             - name: DATABASE_USER
               valueFrom:
                 secretKeyRef:
-                  name: accounts-postgres
+                  name: postgresql
                   key: database-user
             - name: DATABASE_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: accounts-postgres
+                  name: postgresql
                   key: database-password
             - name: DATABASE_NAME
               valueFrom:
                 secretKeyRef:
-                  name: accounts-postgres
+                  name: postgresql
                   key: database-name
           readinessProbe:
             httpGet:

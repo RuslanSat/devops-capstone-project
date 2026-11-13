@@ -12,9 +12,12 @@ spec:
     - name: branch
       type: string
       default: main
-    - name: image
+    - name: app-name
       type: string
-      default: us.icr.io/sn-labs-u241983/accounts:1.0
+      default: accounts
+    - name: build-image
+      type: string
+      default: image-registry.openshift-image-registry.svc:5000/sn-labs-u241983/accounts:1
   tasks:
     - name: init
       taskRef:
@@ -62,7 +65,7 @@ spec:
               pip install --no-cache-dir flake8==4.0.1
               flake8 service tests --count --statistics
     - name: tests
-      runAfter: [lint]
+      runAfter: [clone]
       workspaces:
         - name: source
           workspace: pipeline-workspace
@@ -75,24 +78,15 @@ spec:
             workingDir: $(workspaces.source.path)
             env:
               - name: DATABASE_URI
-                value: postgresql://postgres:postgres@accounts-postgres:5432/accounts_test
+                value: sqlite:///test.db
             script: |
               #!/bin/sh
               set -eu
               pip install --no-cache-dir -r requirements.txt
-              python - <<'PYTHON'
-              import psycopg2
-              connection = psycopg2.connect('postgresql://postgres:postgres@accounts-postgres:5432/postgres')
-              connection.autocommit = True
-              with connection.cursor() as cursor:
-                  cursor.execute("SELECT 1 FROM pg_database WHERE datname = 'accounts_test'")
-                  if not cursor.fetchone():
-                      cursor.execute('CREATE DATABASE accounts_test')
-              connection.close()
-              PYTHON
               nosetests -vv --with-spec --spec-color --with-coverage --cover-package=service --cover-min-percentage=95
+              coverage report -m --fail-under=95
     - name: build
-      runAfter: [tests]
+      runAfter: [lint, tests]
       taskRef:
         kind: ClusterTask
         name: buildah
@@ -101,35 +95,27 @@ spec:
           workspace: pipeline-workspace
       params:
         - name: IMAGE
-          value: $(params.image)
+          value: $(params.build-image)
         - name: DOCKERFILE
           value: ./Dockerfile
         - name: CONTEXT
           value: .
     - name: deploy
       runAfter: [build]
+      taskRef:
+        kind: ClusterTask
+        name: openshift-client
       params:
-        - name: image
-          value: $(params.image)
+        - name: SCRIPT
+          value: |
+            set -eu
+            echo "Updating the account-service image manifest..."
+            sed -i "s|IMAGE_NAME_HERE|$(params.build-image)|g" deploy/deployment.yaml
+            cat deploy/deployment.yaml
+            echo "Deploying the account service to the provided OpenShift namespace..."
+            oc apply -f deploy/
+            oc rollout status deployment/$(params.app-name) --timeout=180s
+            oc get all -l app=$(params.app-name)
       workspaces:
-        - name: source
+        - name: manifest-dir
           workspace: pipeline-workspace
-      taskSpec:
-        params:
-          - name: image
-        workspaces:
-          - name: source
-        steps:
-          - name: kubernetes-rollout
-            image: registry.k8s.io/kubectl:v1.30.2
-            workingDir: $(workspaces.source.path)
-            script: |
-              #!/bin/sh
-              set -eu
-              kubectl apply -f deploy/postgres.yaml
-              kubectl rollout status deployment/accounts-postgres --timeout=180s
-              kubectl apply -f deploy/deployment.yaml
-              kubectl set image deployment/accounts accounts=$(params.image)
-              kubectl rollout restart deployment/accounts
-              kubectl rollout status deployment/accounts --timeout=180s
-              kubectl get deployments,pods,replicasets,services
