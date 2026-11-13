@@ -109,11 +109,8 @@ spec:
         - name: SCRIPT
           value: |
             set -eu
-            echo "Updating the account-service image manifest..."
-            sed -i "s|IMAGE_NAME_HERE|$(params.build-image)|g" deploy/deployment.yaml
-            cat deploy/deployment.yaml
             echo "Deploying the account service to the provided OpenShift namespace..."
-            oc apply -f deploy/
+            sed "s|IMAGE_NAME_HERE|$(params.build-image)|g" deploy/deployment.yaml | oc apply -f -
             oc rollout status deployment/$(params.app-name) --timeout=180s
             oc get all -l app=$(params.app-name)
       workspaces:
