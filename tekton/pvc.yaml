@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: pipelinerun-pvc
+  name: accounts-devops-workspace
 spec:
   storageClassName: skills-network-learner
   resources:

@@ -1,0 +1,21 @@
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  generateName: accounts-devops-cd-
+spec:
+  serviceAccountName: pipeline
+  pipelineRef:
+    name: accounts-devops-cd
+  params:
+    - name: repo-url
+      value: https://github.com/RuslanSat/devops-capstone-project.git
+    - name: branch
+      value: main
+    - name: app-name
+      value: accounts
+    - name: build-image
+      value: image-registry.openshift-image-registry.svc:5000/sn-labs-u241983/accounts:1
+  workspaces:
+    - name: pipeline-workspace
+      persistentVolumeClaim:
+        claimName: accounts-devops-workspace

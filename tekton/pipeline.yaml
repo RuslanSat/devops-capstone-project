@@ -1,38 +1,121 @@
-#
-# This pipeline needs the following tasks from Tekton Catalog
-#   - git-clone
-#   - flake8
-#
----
 apiVersion: tekton.dev/v1beta1
 kind: Pipeline
-metadata:  
-  name: cd-pipeline
+metadata:
+  name: accounts-devops-cd
 spec:
   workspaces:
     - name: pipeline-workspace
   params:
     - name: repo-url
+      type: string
+      default: https://github.com/RuslanSat/devops-capstone-project.git
     - name: branch
+      type: string
       default: main
+    - name: app-name
+      type: string
+      default: accounts
+    - name: build-image
+      type: string
+      default: image-registry.openshift-image-registry.svc:5000/sn-labs-u241983/accounts:1
   tasks:
     - name: init
+      taskRef:
+        name: accounts-devops-cleanup
       workspaces:
         - name: source
-          workspace: pipeline-workspace          
-      taskRef:
-        name: cleanup
-
+          workspace: pipeline-workspace
     - name: clone
+      runAfter: [init]
       workspaces:
-        - name: output
-          workspace: pipeline-workspace          
-      taskRef:
-        name: git-clone
+        - name: source
+          workspace: pipeline-workspace
       params:
-      - name: url
-        value: $(params.repo-url)
-      - name: revision
-        value: $(params.branch)
-      runAfter:
-        - init
+        - name: repo-url
+          value: $(params.repo-url)
+        - name: branch
+          value: $(params.branch)
+      taskSpec:
+        params:
+          - name: repo-url
+          - name: branch
+        workspaces:
+          - name: source
+        steps:
+          - name: git-clone
+            image: alpine/git:2.47.2
+            workingDir: $(workspaces.source.path)
+            command: [git]
+            args: [clone, --single-branch, --branch, $(params.branch), $(params.repo-url), .]
+    - name: lint
+      runAfter: [clone]
+      workspaces:
+        - name: source
+          workspace: pipeline-workspace
+      taskSpec:
+        workspaces:
+          - name: source
+        steps:
+          - name: flake8
+            image: python:3.9-slim
+            workingDir: $(workspaces.source.path)
+            script: |
+              #!/bin/sh
+              set -eu
+              pip install --no-cache-dir flake8==4.0.1
+              flake8 service tests --count --statistics
+    - name: tests
+      runAfter: [clone]
+      workspaces:
+        - name: source
+          workspace: pipeline-workspace
+      taskSpec:
+        workspaces:
+          - name: source
+        steps:
+          - name: nose-with-coverage
+            image: python:3.9-slim
+            workingDir: $(workspaces.source.path)
+            env:
+              - name: DATABASE_URI
+                value: sqlite:///test.db
+            script: |
+              #!/bin/sh
+              set -eu
+              pip install --no-cache-dir -r requirements.txt
+              nosetests -vv --with-spec --spec-color --with-coverage --cover-package=service --cover-min-percentage=95
+              coverage report -m --fail-under=95
+    - name: build
+      runAfter: [lint, tests]
+      taskRef:
+        kind: ClusterTask
+        name: buildah
+      workspaces:
+        - name: source
+          workspace: pipeline-workspace
+      params:
+        - name: IMAGE
+          value: $(params.build-image)
+        - name: DOCKERFILE
+          value: ./Dockerfile
+        - name: CONTEXT
+          value: .
+    - name: deploy
+      runAfter: [build]
+      taskRef:
+        kind: ClusterTask
+        name: openshift-client
+      params:
+        - name: SCRIPT
+          value: |
+            set -eu
+            echo "Updating the account-service image manifest..."
+            sed -i "s|IMAGE_NAME_HERE|$(params.build-image)|g" deploy/deployment.yaml
+            cat deploy/deployment.yaml
+            echo "Deploying the account service to the provided OpenShift namespace..."
+            oc apply -f deploy/
+            oc rollout status deployment/$(params.app-name) --timeout=180s
+            oc get all -l app=$(params.app-name)
+      workspaces:
+        - name: manifest-dir
+          workspace: pipeline-workspace

@@ -1,0 +1,53 @@
+name: CI Build
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URI: postgresql://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Lint with flake8
+        run: flake8 service tests --count --statistics
+      - name: Lint with pylint
+        run: pylint service --fail-under=9
+      - name: Test with nose and enforce 95 percent coverage
+        run: |
+          nosetests -v --with-spec --spec-color --with-coverage --cover-package=service --cover-erase --cover-min-percentage=95
+          coverage report -m --fail-under=95
+          coverage xml
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: |
+            .coverage
+            coverage.xml
+          include-hidden-files: true
