@@ -83,7 +83,7 @@ spec:
               #!/bin/sh
               set -eu
               pip install --no-cache-dir -r requirements.txt
-              nosetests -vv --with-spec --spec-color --with-coverage --cover-package=service --cover-min-percentage=95
+              nosetests --verbosity=2 --with-spec --spec-color --with-coverage --cover-package=service --cover-min-percentage=95
               coverage report -m --fail-under=95
     - name: build
       runAfter: [lint, tests]
