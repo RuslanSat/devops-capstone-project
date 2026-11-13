@@ -1,5 +1,7 @@
 # devops-capstone-project
 
+[![CI Build](https://github.com/RuslanSat/devops-capstone-project/actions/workflows/ci-build.yaml/badge.svg)](https://github.com/RuslanSat/devops-capstone-project/actions/workflows/ci-build.yaml)
+
 Customer Accounts REST microservice capstone: Agile planning, test-driven development, continuous integration, application security, and Kubernetes deployment.
 
 

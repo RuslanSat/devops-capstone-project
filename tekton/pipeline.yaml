@@ -1,38 +1,135 @@
-#
-# This pipeline needs the following tasks from Tekton Catalog
-#   - git-clone
-#   - flake8
-#
----
 apiVersion: tekton.dev/v1beta1
 kind: Pipeline
-metadata:  
+metadata:
   name: cd-pipeline
 spec:
   workspaces:
     - name: pipeline-workspace
   params:
     - name: repo-url
+      type: string
+      default: https://github.com/RuslanSat/devops-capstone-project.git
     - name: branch
+      type: string
       default: main
+    - name: image
+      type: string
+      default: us.icr.io/sn-labs-u241983/accounts:1.0
   tasks:
     - name: init
-      workspaces:
-        - name: source
-          workspace: pipeline-workspace          
       taskRef:
         name: cleanup
-
-    - name: clone
       workspaces:
-        - name: output
-          workspace: pipeline-workspace          
-      taskRef:
-        name: git-clone
+        - name: source
+          workspace: pipeline-workspace
+    - name: clone
+      runAfter: [init]
+      workspaces:
+        - name: source
+          workspace: pipeline-workspace
       params:
-      - name: url
-        value: $(params.repo-url)
-      - name: revision
-        value: $(params.branch)
-      runAfter:
-        - init
+        - name: repo-url
+          value: $(params.repo-url)
+        - name: branch
+          value: $(params.branch)
+      taskSpec:
+        params:
+          - name: repo-url
+          - name: branch
+        workspaces:
+          - name: source
+        steps:
+          - name: git-clone
+            image: alpine/git:2.47.2
+            workingDir: $(workspaces.source.path)
+            command: [git]
+            args: [clone, --single-branch, --branch, $(params.branch), $(params.repo-url), .]
+    - name: lint
+      runAfter: [clone]
+      workspaces:
+        - name: source
+          workspace: pipeline-workspace
+      taskSpec:
+        workspaces:
+          - name: source
+        steps:
+          - name: flake8
+            image: python:3.9-slim
+            workingDir: $(workspaces.source.path)
+            script: |
+              #!/bin/sh
+              set -eu
+              pip install --no-cache-dir flake8==4.0.1
+              flake8 service tests --count --statistics
+    - name: tests
+      runAfter: [lint]
+      workspaces:
+        - name: source
+          workspace: pipeline-workspace
+      taskSpec:
+        workspaces:
+          - name: source
+        steps:
+          - name: nose-with-coverage
+            image: python:3.9-slim
+            workingDir: $(workspaces.source.path)
+            env:
+              - name: DATABASE_URI
+                value: postgresql://postgres:postgres@accounts-postgres:5432/accounts_test
+            script: |
+              #!/bin/sh
+              set -eu
+              pip install --no-cache-dir -r requirements.txt
+              python - <<'PYTHON'
+              import psycopg2
+              connection = psycopg2.connect('postgresql://postgres:postgres@accounts-postgres:5432/postgres')
+              connection.autocommit = True
+              with connection.cursor() as cursor:
+                  cursor.execute("SELECT 1 FROM pg_database WHERE datname = 'accounts_test'")
+                  if not cursor.fetchone():
+                      cursor.execute('CREATE DATABASE accounts_test')
+              connection.close()
+              PYTHON
+              nosetests -vv --with-spec --spec-color --with-coverage --cover-package=service --cover-min-percentage=95
+    - name: build
+      runAfter: [tests]
+      taskRef:
+        kind: ClusterTask
+        name: buildah
+      workspaces:
+        - name: source
+          workspace: pipeline-workspace
+      params:
+        - name: IMAGE
+          value: $(params.image)
+        - name: DOCKERFILE
+          value: ./Dockerfile
+        - name: CONTEXT
+          value: .
+    - name: deploy
+      runAfter: [build]
+      params:
+        - name: image
+          value: $(params.image)
+      workspaces:
+        - name: source
+          workspace: pipeline-workspace
+      taskSpec:
+        params:
+          - name: image
+        workspaces:
+          - name: source
+        steps:
+          - name: kubernetes-rollout
+            image: registry.k8s.io/kubectl:v1.30.2
+            workingDir: $(workspaces.source.path)
+            script: |
+              #!/bin/sh
+              set -eu
+              kubectl apply -f deploy/postgres.yaml
+              kubectl rollout status deployment/accounts-postgres --timeout=180s
+              kubectl apply -f deploy/deployment.yaml
+              kubectl set image deployment/accounts accounts=$(params.image)
+              kubectl rollout restart deployment/accounts
+              kubectl rollout status deployment/accounts --timeout=180s
+              kubectl get deployments,pods,replicasets,services

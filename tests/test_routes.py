@@ -249,4 +249,3 @@ class TestAccountService(TestCase):
         response = self.client.patch(BASE_URL, json={})
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
         self.assertEqual(response.get_json()["error"], "Method not Allowed")
-
