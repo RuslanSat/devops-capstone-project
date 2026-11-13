@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1beta1
 kind: Pipeline
 metadata:
-  name: cd-pipeline
+  name: accounts-devops-cd
 spec:
   workspaces:
     - name: pipeline-workspace
@@ -18,7 +18,7 @@ spec:
   tasks:
     - name: init
       taskRef:
-        name: cleanup
+        name: accounts-devops-cleanup
       workspaces:
         - name: source
           workspace: pipeline-workspace
