@@ -134,3 +134,22 @@ You can now perform Tekton development locally, just like in the Cloud IDE lab e
 Licensed under the Apache License. See [LICENSE](LICENSE)
 
 ## <h3 align="center"> © IBM Corporation 2022. All rights reserved. <h3/>
+
+## Implemented API and validation
+
+The service supports `POST /accounts`, `GET /accounts`, and
+`GET`, `PUT`, `DELETE /accounts/<id>`. Creation returns a resolvable `Location`;
+updates validate the full replacement before persisting it; unknown reads and
+updates return JSON 404; deletion is idempotent and returns an empty 204.
+Flask-Talisman supplies browser security headers, with HTTPS redirection disabled
+for the lab's ingress-terminated TLS. Flask-Cors enables API browser clients.
+
+Run `nosetests` with PostgreSQL configured through `DATABASE_URI`. The committed
+configuration and CI enforce at least 95% statement coverage, with flake8 and
+pylint checks. CI runs Python 3.9 against PostgreSQL 14.
+
+## AI assistance disclosure
+
+AI assistance was used to implement and review code, tests, CI configuration,
+and documentation. Execution logs and screenshots document actual test and
+lab runs; they are not a claim of unassisted authorship.
